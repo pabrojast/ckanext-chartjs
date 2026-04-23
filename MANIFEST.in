@@ -1,0 +1,6 @@
+include README.md
+include LICENSE
+include requirements.txt
+recursive-include ckanext/chartjs *.py
+recursive-include ckanext/chartjs/templates *
+recursive-include ckanext/chartjs/public *

@@ -1,0 +1,537 @@
+/* ============================================================
+   Chart.js CKAN Extension - Styles
+   ============================================================ */
+
+/* --- Main Wrapper --- */
+.cj-wrapper {
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Inter', Roboto, Oxygen, Ubuntu, sans-serif;
+  position: relative;
+  background: #ffffff;
+  border-radius: 12px;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.08), 0 4px 12px rgba(0,0,0,0.04);
+  overflow: hidden;
+  min-height: 600px;
+}
+
+/* --- Header --- */
+.cj-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 16px 24px;
+  background: linear-gradient(135deg, #FF6384 0%, #36A2EB 100%);
+  color: white;
+}
+
+.cj-header-left {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.cj-header-icon {
+  width: 36px;
+  height: 36px;
+  background: rgba(255,255,255,0.2);
+  border-radius: 10px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  backdrop-filter: blur(10px);
+}
+
+.cj-header-icon svg {
+  width: 20px;
+  height: 20px;
+  fill: white;
+}
+
+.cj-header-title {
+  font-size: 16px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
+
+.cj-header-subtitle {
+  font-size: 12px;
+  opacity: 0.8;
+  font-weight: 400;
+}
+
+.cj-header-actions {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+/* --- Buttons --- */
+.cj-btn {
+  padding: 6px 14px;
+  border-radius: 8px;
+  border: 1px solid rgba(255,255,255,0.3);
+  background: rgba(255,255,255,0.15);
+  color: white;
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  backdrop-filter: blur(10px);
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.cj-btn:hover {
+  background: rgba(255,255,255,0.25);
+  border-color: rgba(255,255,255,0.5);
+}
+
+.cj-btn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.cj-btn-save {
+  background: rgba(255,255,255,0.25);
+  border-color: rgba(255,255,255,0.4);
+}
+
+.cj-btn-save:hover {
+  background: rgba(255,255,255,0.35);
+}
+
+/* --- Save Status --- */
+.cj-save-status {
+  font-size: 12px;
+  padding: 4px 10px;
+  border-radius: 6px;
+  opacity: 0;
+  transition: opacity 0.3s ease;
+  pointer-events: none;
+}
+
+.cj-save-status.show {
+  opacity: 1;
+}
+
+.cj-save-status.success {
+  background: rgba(52, 211, 153, 0.3);
+  color: #d1fae5;
+}
+
+.cj-save-status.error {
+  background: rgba(239, 68, 68, 0.3);
+  color: #fecaca;
+}
+
+@keyframes cj-spin {
+  to { transform: rotate(360deg); }
+}
+
+.cj-spin {
+  animation: cj-spin 0.8s linear infinite;
+}
+
+/* --- Stats Bar --- */
+.cj-stats {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 10px 24px;
+  background: #f9fafb;
+  border-bottom: 1px solid #f3f4f6;
+  font-size: 12px;
+  color: #6b7280;
+}
+
+.cj-stat {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.cj-stat-value {
+  font-weight: 600;
+  color: #374151;
+}
+
+/* --- Content Area --- */
+.cj-content {
+  position: relative;
+  min-height: 550px;
+}
+
+/* --- Loading State --- */
+.cj-loading {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  min-height: 500px;
+  gap: 20px;
+}
+
+.cj-spinner {
+  width: 48px;
+  height: 48px;
+  border: 3px solid #e5e7eb;
+  border-top-color: #FF6384;
+  border-radius: 50%;
+  animation: cj-spin 0.8s linear infinite;
+}
+
+.cj-loading-text {
+  color: #6b7280;
+  font-size: 14px;
+  font-weight: 500;
+}
+
+.cj-loading-subtext {
+  color: #9ca3af;
+  font-size: 12px;
+  margin-top: -12px;
+}
+
+/* --- Error State --- */
+.cj-error {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  min-height: 400px;
+  gap: 16px;
+  padding: 40px;
+}
+
+.cj-error-icon {
+  width: 56px;
+  height: 56px;
+  background: #fef2f2;
+  border-radius: 16px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.cj-error-icon svg {
+  width: 28px;
+  height: 28px;
+  fill: #ef4444;
+}
+
+.cj-error-title {
+  font-size: 16px;
+  font-weight: 600;
+  color: #1f2937;
+}
+
+.cj-error-message {
+  font-size: 14px;
+  color: #6b7280;
+  text-align: center;
+  max-width: 400px;
+  line-height: 1.5;
+}
+
+.cj-retry-btn {
+  padding: 8px 20px;
+  border-radius: 8px;
+  border: 1px solid #e5e7eb;
+  background: white;
+  color: #374151;
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.cj-retry-btn:hover {
+  background: #f9fafb;
+  border-color: #d1d5db;
+}
+
+/* --- App Layout (Two Panels) --- */
+.cj-app-layout {
+  display: flex;
+  min-height: 520px;
+}
+
+.cj-config-panel {
+  width: 290px;
+  min-width: 290px;
+  border-right: 1px solid #f3f4f6;
+  background: #fafbfc;
+  padding: 16px;
+  overflow-y: auto;
+  max-height: 700px;
+}
+
+.cj-chart-area {
+  flex: 1;
+  padding: 24px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 0;
+}
+
+.cj-chart-area canvas {
+  max-width: 100%;
+  max-height: 600px;
+}
+
+/* --- Config Panel Sections --- */
+.cj-config-section {
+  margin-bottom: 18px;
+}
+
+.cj-config-section-title {
+  font-size: 11px;
+  font-weight: 600;
+  color: #9ca3af;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  margin-bottom: 8px;
+}
+
+/* --- Chart Type Picker --- */
+.cj-chart-types {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.cj-chart-type-btn {
+  width: 38px;
+  height: 38px;
+  border: 2px solid #e5e7eb;
+  border-radius: 8px;
+  background: white;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.15s ease;
+  padding: 0;
+}
+
+.cj-chart-type-btn:hover {
+  border-color: #36A2EB;
+  background: #eff6ff;
+}
+
+.cj-chart-type-btn.active {
+  border-color: #36A2EB;
+  background: #dbeafe;
+  box-shadow: 0 0 0 2px rgba(54,162,235,0.2);
+}
+
+.cj-chart-type-btn svg {
+  width: 20px;
+  height: 20px;
+}
+
+/* --- Form Controls --- */
+.cj-label {
+  display: block;
+  font-size: 12px;
+  font-weight: 500;
+  color: #4b5563;
+  margin-bottom: 4px;
+}
+
+.cj-select,
+.cj-input {
+  width: 100%;
+  padding: 7px 10px;
+  border: 1px solid #d1d5db;
+  border-radius: 6px;
+  font-size: 13px;
+  color: #1f2937;
+  background: white;
+  transition: border-color 0.15s ease;
+  box-sizing: border-box;
+}
+
+.cj-select:focus,
+.cj-input:focus {
+  outline: none;
+  border-color: #36A2EB;
+  box-shadow: 0 0 0 2px rgba(54,162,235,0.15);
+}
+
+/* --- Series Cards --- */
+.cj-series-card {
+  background: white;
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+  padding: 12px;
+  margin-bottom: 8px;
+  position: relative;
+}
+
+.cj-series-card-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 8px;
+}
+
+.cj-series-card-title {
+  font-size: 12px;
+  font-weight: 600;
+  color: #374151;
+}
+
+.cj-series-remove-btn {
+  width: 22px;
+  height: 22px;
+  border: none;
+  background: #fef2f2;
+  color: #ef4444;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 14px;
+  line-height: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 0.15s ease;
+  padding: 0;
+}
+
+.cj-series-remove-btn:hover {
+  background: #fee2e2;
+}
+
+.cj-series-field {
+  margin-bottom: 6px;
+}
+
+.cj-series-color-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.cj-color-input {
+  width: 32px;
+  height: 28px;
+  border: 1px solid #d1d5db;
+  border-radius: 4px;
+  cursor: pointer;
+  padding: 1px;
+  background: white;
+}
+
+.cj-color-input::-webkit-color-swatch-wrapper {
+  padding: 0;
+}
+
+.cj-color-input::-webkit-color-swatch {
+  border: none;
+  border-radius: 3px;
+}
+
+.cj-add-series-btn {
+  width: 100%;
+  padding: 8px;
+  border: 2px dashed #d1d5db;
+  border-radius: 8px;
+  background: transparent;
+  color: #6b7280;
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.cj-add-series-btn:hover {
+  border-color: #36A2EB;
+  color: #36A2EB;
+  background: #f0f7ff;
+}
+
+/* --- Options Section --- */
+.cj-options-toggle {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  cursor: pointer;
+  padding: 6px 0;
+  user-select: none;
+}
+
+.cj-options-toggle-icon {
+  font-size: 10px;
+  color: #9ca3af;
+  transition: transform 0.2s ease;
+}
+
+.cj-options-toggle-icon.open {
+  transform: rotate(90deg);
+}
+
+.cj-options-content {
+  display: none;
+  padding-top: 8px;
+}
+
+.cj-options-content.open {
+  display: block;
+}
+
+.cj-checkbox-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 0;
+}
+
+.cj-checkbox-row input[type="checkbox"] {
+  width: 16px;
+  height: 16px;
+  accent-color: #36A2EB;
+  cursor: pointer;
+}
+
+.cj-checkbox-row label {
+  font-size: 13px;
+  color: #4b5563;
+  cursor: pointer;
+  user-select: none;
+}
+
+/* --- Full Width Toggle --- */
+.cj-wrapper.full-width {
+  border-radius: 0;
+  margin: -15px;
+}
+
+/* --- Responsive --- */
+@media (max-width: 768px) {
+  .cj-app-layout {
+    flex-direction: column;
+  }
+
+  .cj-config-panel {
+    width: 100%;
+    min-width: 100%;
+    max-height: none;
+    border-right: none;
+    border-bottom: 1px solid #f3f4f6;
+  }
+
+  .cj-chart-area {
+    padding: 16px;
+  }
+
+  .cj-header {
+    padding: 12px 16px;
+  }
+
+  .cj-stats {
+    padding: 8px 16px;
+    flex-wrap: wrap;
+  }
+}

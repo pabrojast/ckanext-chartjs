@@ -1,0 +1,246 @@
+<link rel="stylesheet" href="/chartjs-app/chartjs-ckan.css">
+
+<div class="cj-wrapper" id="cj-wrapper">
+  <div class="cj-header">
+    <div class="cj-header-left">
+      <div class="cj-header-icon">
+        <svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+          <rect x="3" y="12" width="4" height="9" rx="1" fill="white"/>
+          <rect x="10" y="6" width="4" height="15" rx="1" fill="white"/>
+          <rect x="17" y="9" width="4" height="12" rx="1" fill="white"/>
+        </svg>
+      </div>
+      <div>
+        <div class="cj-header-title">{{ view_title }}</div>
+        <div class="cj-header-subtitle">{{ resource_name }} &middot; {{ resource_format | upper }}</div>
+      </div>
+    </div>
+    <div class="cj-header-actions">
+      <span id="cj-save-status" class="cj-save-status"></span>
+      {% if user and view_id %}
+      <button class="cj-btn cj-btn-save" id="cj-save-btn" onclick="cjSaveConfig()" title="Save your chart configuration">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="vertical-align: middle;">
+          <path d="M19 21H5a2 2 0 01-2-2V5a2 2 0 012-2h11l5 5v11a2 2 0 01-2 2z"/>
+          <polyline points="17,21 17,13 7,13 7,21"/>
+          <polyline points="7,3 7,8 15,8"/>
+        </svg>
+        Save
+      </button>
+      {% endif %}
+      <button class="cj-btn" onclick="toggleCJFullWidth()" title="Toggle full width">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="vertical-align: middle;">
+          <path d="M8 3H5a2 2 0 00-2 2v3m18 0V5a2 2 0 00-2-2h-3m0 18h3a2 2 0 002-2v-3M3 16v3a2 2 0 002 2h3"/>
+        </svg>
+        Expand
+      </button>
+    </div>
+  </div>
+
+  <div id="cj-stats" class="cj-stats" style="display: none;">
+    <div class="cj-stat">
+      <span>Rows:</span>
+      <span class="cj-stat-value" id="cj-stat-rows">-</span>
+    </div>
+    <div class="cj-stat">
+      <span>Columns:</span>
+      <span class="cj-stat-value" id="cj-stat-cols">-</span>
+    </div>
+    <div class="cj-stat">
+      <span>Source:</span>
+      <span class="cj-stat-value" id="cj-stat-source">-</span>
+    </div>
+  </div>
+
+  <div class="cj-content" id="cj-content">
+    <div class="cj-loading" id="cj-loading">
+      <div class="cj-spinner"></div>
+      <div class="cj-loading-text">Loading data...</div>
+      <div class="cj-loading-subtext">Preparing your chart workspace</div>
+    </div>
+
+    <div class="cj-error" id="cj-error" style="display: none;">
+      <div class="cj-error-icon">
+        <svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+          <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-2h2v2zm0-4h-2V7h2v6z"/>
+        </svg>
+      </div>
+      <div class="cj-error-title">Unable to load data</div>
+      <div class="cj-error-message" id="cj-error-msg">An unexpected error occurred while loading the dataset.</div>
+      <button class="cj-retry-btn" onclick="cjLoadData()">Try again</button>
+    </div>
+
+    <div id="cj-app" style="display: none;">
+      <div class="cj-app-layout">
+        <div class="cj-config-panel" id="cj-config-panel"></div>
+        <div class="cj-chart-area">
+          <canvas id="cj-canvas"></canvas>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4/dist/chart.umd.min.js"></script>
+<script src="/chartjs-app/chartjs-ckan.js"></script>
+<script>
+(function() {
+  var CJ_CONFIG = {
+    resourceId: '{{ resource_id }}',
+    apiUrl: '{{ api_url }}',
+    maxRows: {{ max_rows }},
+    resourceName: '{{ resource_name }}',
+    viewId: '{{ view_id }}',
+    savedConfig: {{ chart_config_json | safe }},
+  };
+
+  function showLoading() {
+    document.getElementById('cj-loading').style.display = 'flex';
+    document.getElementById('cj-error').style.display = 'none';
+    document.getElementById('cj-app').style.display = 'none';
+  }
+
+  function showError(msg) {
+    document.getElementById('cj-loading').style.display = 'none';
+    document.getElementById('cj-error').style.display = 'flex';
+    document.getElementById('cj-app').style.display = 'none';
+    document.getElementById('cj-error-msg').textContent = msg || 'An unexpected error occurred.';
+  }
+
+  function showApp(stats) {
+    document.getElementById('cj-loading').style.display = 'none';
+    document.getElementById('cj-error').style.display = 'none';
+    document.getElementById('cj-app').style.display = 'block';
+
+    if (stats) {
+      document.getElementById('cj-stats').style.display = 'flex';
+      document.getElementById('cj-stat-rows').textContent = stats.rows.toLocaleString();
+      document.getElementById('cj-stat-cols').textContent = stats.cols;
+      document.getElementById('cj-stat-source').textContent = stats.source === 'datastore' ? 'DataStore' : 'CSV File';
+    }
+  }
+
+  function showSaveStatus(message, type) {
+    var el = document.getElementById('cj-save-status');
+    if (!el) return;
+    el.textContent = message;
+    el.className = 'cj-save-status show ' + type;
+    setTimeout(function() {
+      el.className = 'cj-save-status';
+    }, 3000);
+  }
+
+  window.cjSaveConfig = function() {
+    if (!CJ_CONFIG.viewId) {
+      showSaveStatus('No view ID available', 'error');
+      return;
+    }
+
+    if (!window.ChartJSCKAN || !window.ChartJSCKAN.getConfig) {
+      showSaveStatus('Library not ready', 'error');
+      return;
+    }
+
+    var saveBtn = document.getElementById('cj-save-btn');
+    if (saveBtn) {
+      saveBtn.disabled = true;
+      saveBtn.innerHTML = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="cj-spin"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></svg> Saving...';
+    }
+
+    var config = window.ChartJSCKAN.getConfig();
+    if (!config) {
+      showSaveStatus('No configuration to save', 'error');
+      if (saveBtn) {
+        saveBtn.disabled = false;
+        saveBtn.innerHTML = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M19 21H5a2 2 0 01-2-2V5a2 2 0 012-2h11l5 5v11a2 2 0 01-2 2z"/><polyline points="17,21 17,13 7,13 7,21"/><polyline points="7,3 7,8 15,8"/></svg> Save';
+      }
+      return;
+    }
+
+    var configJson = JSON.stringify(config);
+
+    fetch('/api/chartjs/view/' + CJ_CONFIG.viewId + '/save-config', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ config: configJson }),
+    })
+    .then(function(resp) { return resp.json(); })
+    .then(function(result) {
+      if (result.success) {
+        showSaveStatus('\u2713 Saved', 'success');
+      } else {
+        showSaveStatus(result.error || 'Save failed', 'error');
+      }
+    })
+    .catch(function(err) {
+      console.error('[chartjs] Save error:', err);
+      showSaveStatus('Network error', 'error');
+    })
+    .finally(function() {
+      if (saveBtn) {
+        saveBtn.disabled = false;
+        saveBtn.innerHTML = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M19 21H5a2 2 0 01-2-2V5a2 2 0 012-2h11l5 5v11a2 2 0 01-2 2z"/><polyline points="17,21 17,13 7,13 7,21"/><polyline points="7,3 7,8 15,8"/></svg> Save';
+      }
+    });
+  };
+
+  window.cjLoadData = function() {
+    showLoading();
+
+    fetch(CJ_CONFIG.apiUrl)
+      .then(function(resp) { return resp.json(); })
+      .then(function(result) {
+        if (!result.success) {
+          showError(result.error || 'Failed to load data.');
+          return;
+        }
+
+        var data = result.data;
+        var fields = result.fields;
+
+        if (!data || data.length === 0) {
+          showError('No data found in this resource.');
+          return;
+        }
+
+        showApp({
+          rows: result.total || data.length,
+          cols: fields.length,
+          source: result.source,
+        });
+
+        if (window.ChartJSCKAN && window.ChartJSCKAN.init) {
+          window.ChartJSCKAN.init(
+            document.getElementById('cj-config-panel'),
+            document.getElementById('cj-canvas'),
+            data,
+            fields,
+            CJ_CONFIG.savedConfig
+          );
+        } else {
+          showError('Chart.js library failed to load. Please refresh the page.');
+        }
+      })
+      .catch(function(err) {
+        console.error('[chartjs] Load error:', err);
+        showError('Network error loading data: ' + err.message);
+      });
+  };
+
+  window.toggleCJFullWidth = function() {
+    var wrapper = document.getElementById('cj-wrapper');
+    wrapper.classList.toggle('full-width');
+
+    var containers = document.querySelectorAll('.container, .container-fluid');
+    containers.forEach(function(c) {
+      c.classList.toggle('cj-expanded');
+    });
+  };
+
+  // Auto-load on page ready
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', cjLoadData);
+  } else {
+    cjLoadData();
+  }
+})();
+</script>
