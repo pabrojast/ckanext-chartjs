@@ -30,7 +30,7 @@ setup(
     package_data={},
     entry_points='''
         [ckan.plugins]
-        chart_js=ckanext.chartjs.plugin:ChartJSPlugin
+        chartjs=ckanext.chartjs.plugin:ChartJSPlugin
     ''',
     message_extractors={
         'ckanext': [

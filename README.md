@@ -40,10 +40,10 @@ This extension adds a **Chart.js** resource view type that lets users create bea
    pip install -e /path/to/ckanext-chartjs
    ```
 
-3. Add `chart_js` to the `ckan.plugins` setting in your CKAN config file:
+3. Add `chartjs` to the `ckan.plugins` setting in your CKAN config file:
 
    ```ini
-   ckan.plugins = ... chart_js
+   ckan.plugins = ... chartjs
    ```
 
 4. Restart CKAN.
@@ -54,13 +54,13 @@ Optional settings in your CKAN config file:
 
 ```ini
 # Default title for new Chart.js views (default: "Chart.js Explorer")
-ckanext.chart_js.default_title = Chart.js Explorer
+ckanext.chartjs.default_title = Chart.js Explorer
 
 # Supported resource formats, comma-separated (default: csv)
-ckanext.chart_js.formats = csv
+ckanext.chartjs.formats = csv
 
 # Maximum rows to load client-side (default: 50000)
-ckanext.chart_js.max_rows = 50000
+ckanext.chartjs.max_rows = 50000
 ```
 
 ## Usage

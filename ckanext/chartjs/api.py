@@ -20,7 +20,7 @@ chartjs_api = Blueprint(
 def _get_max_rows():
     """Get configured max rows limit."""
     try:
-        return int(toolkit.config.get('ckanext.chart_js.max_rows', '50000'))
+        return int(toolkit.config.get('ckanext.chartjs.max_rows', '50000'))
     except (ValueError, TypeError):
         return 50000
 

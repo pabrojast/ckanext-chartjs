@@ -8,7 +8,7 @@ import ckan.plugins.toolkit as toolkit
 
 from .api import chartjs_api
 
-PLUGIN_NAME = 'chart_js'
+PLUGIN_NAME = 'chartjs'
 
 
 class ChartJSPlugin(plugins.SingletonPlugin):
