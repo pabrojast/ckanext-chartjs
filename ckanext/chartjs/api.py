@@ -8,7 +8,7 @@ import io
 import os
 import json
 
-from flask import Blueprint, jsonify, request
+from flask import Blueprint, jsonify, request, g
 import ckan.plugins.toolkit as toolkit
 
 chartjs_api = Blueprint(
@@ -25,10 +25,20 @@ def _get_max_rows():
         return 50000
 
 
-def _try_datastore(resource_id, max_rows):
-    """Try to fetch data from CKAN DataStore API."""
+def _get_request_user():
+    """Resolve the logged-in user from the current request context."""
+    user = ''
     try:
-        context = {'ignore_auth': True}
+        user = toolkit.c.user or ''
+    except Exception:
+        user = getattr(g, 'user', '') if hasattr(g, 'user') else ''
+    return user or ''
+
+
+def _try_datastore(resource_id, max_rows, user):
+    """Try to fetch data from CKAN DataStore API as the given user."""
+    try:
+        context = {'user': user, 'ignore_auth': False}
         result = toolkit.get_action('datastore_search')(context, {
             'resource_id': resource_id,
             'limit': max_rows,
@@ -83,8 +93,30 @@ def _infer_analytic_type_from_datastore(ds_type):
     return 'dimension'
 
 
+def _http_fetch(url, headers=None, timeout=60):
+    """Fetch a URL with optional headers, returning decoded text or None."""
+    import urllib.request
+    try:
+        req = urllib.request.Request(url)
+        for k, v in (headers or {}).items():
+            if v:
+                req.add_header(k, v)
+        with urllib.request.urlopen(req, timeout=timeout) as resp:
+            return resp.read().decode('utf-8', errors='replace')
+    except Exception as e:
+        if os.getenv("CJ_DEBUG", "false").lower() == "true":
+            print(f"[chartjs] HTTP fetch failed for {url}: {e}")
+        return None
+
+
 def _try_direct_csv(resource_id, max_rows):
-    """Fall back to downloading the CSV file directly."""
+    """Fall back to downloading the CSV file directly.
+
+    For private resources stored in cloudstorage, the CKAN download endpoint
+    requires the user's session. We forward the cookie from the current
+    request so the downstream auth check sees the same user that already
+    passed the resource view's auth gate.
+    """
     try:
         import ckan.model as model
         resource = model.Resource.get(resource_id)
@@ -97,43 +129,52 @@ def _try_direct_csv(resource_id, max_rows):
 
         content = None
 
-        # Try to get from local upload first
+        # 1. Local upload (filesystem-backed CKAN uploads).
         try:
             from ckan.lib.uploader import get_resource_uploader
             uploader = get_resource_uploader(resource.as_dict())
             if hasattr(uploader, 'get_path'):
                 upload_path = uploader.get_path(resource.id)
-                if upload_path and os.path.exists(upload_path):
+                if upload_path and isinstance(upload_path, str) and os.path.exists(upload_path):
                     with open(upload_path, 'r', encoding='utf-8', errors='replace') as f:
                         content = f.read()
         except Exception:
             pass
 
-        # Try the CKAN internal download URL (works for cloud storage uploads)
+        # 2. cloudstorage signed URL (works without forwarding auth).
         if content is None and resource.url_type == 'upload':
             try:
-                import urllib.request
-                site_url = toolkit.config.get('ckan.site_url', '').rstrip('/')
-                if not site_url:
-                    site_url = 'http://localhost:5000'
-                download_url = '{}/dataset/{}/resource/{}/download/{}'.format(
-                    site_url, resource.package_id, resource.id, resource.url
+                from ckanext.cloudstorage.storage import ResourceCloudStorage
+                cs_uploader = ResourceCloudStorage(resource.as_dict())
+                signed_url = cs_uploader.get_url_from_filename(
+                    resource.id, resource.url
                 )
-                req = urllib.request.Request(download_url)
-                with urllib.request.urlopen(req, timeout=60) as resp:
-                    content = resp.read().decode('utf-8', errors='replace')
+                if signed_url:
+                    content = _http_fetch(signed_url, timeout=60)
+            except ImportError:
+                pass
             except Exception:
                 pass
 
-        # Try the resource URL directly (external URLs)
+        # 3. CKAN's own download endpoint, with the caller's session cookie
+        #    so private resources resolve correctly. CKAN returns the file
+        #    or a redirect to a signed storage URL.
+        if content is None and resource.url_type == 'upload':
+            site_url = toolkit.config.get('ckan.site_url', '').rstrip('/')
+            if not site_url:
+                site_url = 'http://localhost:5000'
+            download_url = '{}/dataset/{}/resource/{}/download/{}'.format(
+                site_url, resource.package_id, resource.id, resource.url
+            )
+            headers = {
+                'Cookie': request.headers.get('Cookie', ''),
+                'Authorization': request.headers.get('Authorization', ''),
+            }
+            content = _http_fetch(download_url, headers=headers, timeout=60)
+
+        # 4. External URL (link-type resources).
         if content is None and resource_url.startswith(('http://', 'https://')):
-            try:
-                import urllib.request
-                req = urllib.request.Request(resource_url)
-                with urllib.request.urlopen(req, timeout=30) as resp:
-                    content = resp.read().decode('utf-8', errors='replace')
-            except Exception:
-                pass
+            content = _http_fetch(resource_url, timeout=30)
 
         if content is None:
             return None, None, None
@@ -243,11 +284,28 @@ def get_resource_data(resource_id):
     """
     Serve resource data as JSON for Chart.js frontend.
     Tries DataStore API first, falls back to direct CSV download.
+    Authorizes the request as the logged-in user so private resources
+    are gated by CKAN's normal auth model.
     """
     max_rows = _get_max_rows()
+    user = _get_request_user()
 
-    # Try DataStore first
-    records, fields, total = _try_datastore(resource_id, max_rows)
+    # Gate access through resource_show: matches what CKAN would do for
+    # a logged-in user viewing the resource page. Returns 403 for users
+    # who don't have access, 404 for unknown ids.
+    auth_context = {'user': user, 'ignore_auth': False}
+    try:
+        toolkit.get_action('resource_show')(auth_context, {'id': resource_id})
+    except toolkit.ObjectNotFound:
+        return jsonify({'success': False, 'error': 'Resource not found.'}), 404
+    except toolkit.NotAuthorized:
+        return jsonify({
+            'success': False,
+            'error': 'Not authorized to view this resource. Please log in.',
+        }), 403
+
+    # Try DataStore first as the authenticated user
+    records, fields, total = _try_datastore(resource_id, max_rows, user)
 
     if records is not None:
         return jsonify({
@@ -259,7 +317,7 @@ def get_resource_data(resource_id):
             'max_rows': max_rows,
         })
 
-    # Fall back to direct CSV
+    # Fall back to direct CSV (forwards session cookie for private resources)
     records, fields, total = _try_direct_csv(resource_id, max_rows)
 
     if records is not None:
@@ -285,12 +343,7 @@ def save_view_config(view_id):
     Expects JSON body: {"config": "...json string..."}
     """
     try:
-        from flask import g
-        user = None
-        try:
-            user = toolkit.c.user or None
-        except Exception:
-            user = getattr(g, 'user', None) if hasattr(g, 'user') else None
+        user = _get_request_user() or None
 
         if not user:
             return jsonify({'success': False, 'error': 'Authentication required. Please log in.'}), 401
