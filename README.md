@@ -78,6 +78,34 @@ ckanext.chartjs.max_rows = 50000
    - Toggle options (legend, grid, stacked, etc.)
 6. Click **Save** to persist your chart configuration
 
+## Sharing & Embedding
+
+Once you have configured and **saved** a chart, click the **Share** button in the chart header to:
+
+- **Copy an embed link** — a standalone read-only page that shows just the chart:
+  `https://your-ckan-site/chartjs/embed/<view_id>`
+- **Copy an `<iframe>` snippet** to embed the live chart in any web page:
+
+  ```html
+  <iframe src="https://your-ckan-site/chartjs/embed/<view_id>"
+          width="100%" height="500" frameborder="0"></iframe>
+  ```
+
+- **Download a PNG** image of the current chart (rendered client-side, white background).
+
+The embed always reflects the **last saved configuration** of the view.
+
+### Embedding limitations
+
+- **Public resources** embed anywhere.
+- **Private resources** only render for viewers who are logged into the same CKAN
+  site (the embed page enforces CKAN's normal authorization). Because session
+  cookies are `SameSite=Lax`, private charts will not load in an `<iframe>` hosted
+  on a different domain.
+- If your CKAN deployment or reverse proxy sets a restrictive `X-Frame-Options`
+  or `Content-Security-Policy: frame-ancestors` header, external framing may be
+  blocked at the infrastructure level.
+
 ## Air-gapped / Offline Environments
 
 By default, Chart.js is loaded from the jsDelivr CDN. For environments without internet access:
