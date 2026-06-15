@@ -279,6 +279,40 @@ def _infer_semantic_type_from_sample(values):
     return 'nominal'
 
 
+def _resolve_view(view_id):
+    """Resolve a resource_view and its resource for the current request user.
+
+    Returns a dict with view metadata and the parsed chart_config.
+    Raises toolkit.ObjectNotFound / toolkit.NotAuthorized so callers can map
+    them to HTTP status codes. Auth is enforced exactly as CKAN would for a
+    user viewing the resource page.
+    """
+    user = _get_request_user()
+    context = {'user': user, 'ignore_auth': False}
+
+    view = toolkit.get_action('resource_view_show')(context, {'id': view_id})
+    resource_id = view.get('resource_id', '')
+    # resource_show enforces auth on the underlying resource (403 for private).
+    resource = toolkit.get_action('resource_show')(context, {'id': resource_id})
+
+    raw_cfg = view.get('chart_config', '')
+    chart_config = None
+    if raw_cfg and isinstance(raw_cfg, str):
+        try:
+            chart_config = json.loads(raw_cfg)
+        except (json.JSONDecodeError, TypeError):
+            chart_config = None
+
+    return {
+        'view': view,
+        'resource_id': resource_id,
+        'resource_name': resource.get('name') or 'Dataset',
+        'resource_format': resource.get('format', 'CSV'),
+        'view_title': view.get('title') or 'Chart.js',
+        'chart_config': chart_config,
+    }
+
+
 @chartjs_api.route('/api/chartjs/data/<resource_id>', methods=['GET'])
 def get_resource_data(resource_id):
     """
@@ -334,6 +368,35 @@ def get_resource_data(resource_id):
         'success': False,
         'error': 'Could not load data from this resource. Ensure it is a valid CSV file.',
     }), 404
+
+
+@chartjs_api.route('/chartjs/embed/<view_id>', methods=['GET'])
+def embed_view(view_id):
+    """Standalone, read-only chart page suitable for embedding in an <iframe>.
+
+    Renders the chart using the view's last *saved* configuration. Auth follows
+    CKAN's normal model: 404 for unknown views, 403 for resources the caller
+    cannot access (so private resources stay gated).
+    """
+    try:
+        info = _resolve_view(view_id)
+    except toolkit.ObjectNotFound:
+        return jsonify({'success': False, 'error': 'View not found.'}), 404
+    except toolkit.NotAuthorized:
+        return jsonify({'success': False, 'error': 'Not authorized to view this chart.'}), 403
+
+    max_rows = _get_max_rows()
+    extra_vars = {
+        'resource_id': info['resource_id'],
+        'resource_name': info['resource_name'],
+        'resource_format': info['resource_format'],
+        'view_title': info['view_title'],
+        'view_id': view_id,
+        'max_rows': max_rows,
+        'api_url': '/api/chartjs/data/{}'.format(info['resource_id']),
+        'chart_config_json': json.dumps(info['chart_config']) if info['chart_config'] else 'null',
+    }
+    return toolkit.render('chartjs_embed.html', extra_vars=extra_vars)
 
 
 @chartjs_api.route('/api/chartjs/view/<view_id>/save-config', methods=['POST'])

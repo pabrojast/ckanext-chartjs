@@ -27,6 +27,16 @@
         Save
       </button>
       {% endif %}
+      <button class="cj-btn" onclick="cjShare()" title="Share or embed this chart">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="vertical-align: middle;">
+          <circle cx="18" cy="5" r="3"/>
+          <circle cx="6" cy="12" r="3"/>
+          <circle cx="18" cy="19" r="3"/>
+          <line x1="8.59" y1="13.51" x2="15.42" y2="17.49"/>
+          <line x1="15.41" y1="6.51" x2="8.59" y2="10.49"/>
+        </svg>
+        Share
+      </button>
       <button class="cj-btn" onclick="toggleCJFullWidth()" title="Toggle full width">
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="vertical-align: middle;">
           <path d="M8 3H5a2 2 0 00-2 2v3m18 0V5a2 2 0 00-2-2h-3m0 18h3a2 2 0 002-2v-3M3 16v3a2 2 0 002 2h3"/>
@@ -75,6 +85,41 @@
         <div class="cj-chart-area">
           <canvas id="cj-canvas"></canvas>
         </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div id="cj-share-modal" class="cj-modal-overlay" style="display:none;" onclick="cjShareOverlayClick(event)">
+  <div class="cj-modal">
+    <div class="cj-modal-header">
+      <span class="cj-modal-title">Share this chart</span>
+      <button class="cj-modal-close" onclick="cjCloseShare()" aria-label="Close">&times;</button>
+    </div>
+    <div class="cj-modal-body">
+      <div class="cj-modal-note">Embeds reflect the <strong>last saved</strong> configuration &mdash; save your chart first.</div>
+
+      <div id="cj-share-embed-section">
+        <label class="cj-modal-label" for="cj-share-url">Embed link</label>
+        <div class="cj-copy-row">
+          <input type="text" id="cj-share-url" class="cj-input" readonly>
+          <button class="cj-btn-modal" onclick="cjCopy('cj-share-url', this)">Copy</button>
+        </div>
+
+        <label class="cj-modal-label" for="cj-share-iframe">Iframe snippet</label>
+        <div class="cj-copy-row">
+          <textarea id="cj-share-iframe" class="cj-input cj-textarea" readonly rows="3"></textarea>
+          <button class="cj-btn-modal" onclick="cjCopy('cj-share-iframe', this)">Copy</button>
+        </div>
+        <div class="cj-modal-note cj-modal-note-muted">Public resources embed anywhere. Private resources only render for viewers logged into this site.</div>
+      </div>
+
+      <div id="cj-share-nosave" style="display:none;">
+        <div class="cj-modal-note">Save this view first to get an embed link.</div>
+      </div>
+
+      <div class="cj-modal-actions">
+        <button class="cj-btn-modal cj-btn-modal-primary" onclick="cjDownloadPNG()">Download PNG</button>
       </div>
     </div>
   </div>
@@ -229,11 +274,71 @@
   window.toggleCJFullWidth = function() {
     var wrapper = document.getElementById('cj-wrapper');
     wrapper.classList.toggle('full-width');
+    // Let Chart.js recompute the canvas size for the new container width.
+    if (window.ChartJSCKAN && window.ChartJSCKAN.resize) {
+      window.ChartJSCKAN.resize();
+    }
+  };
 
-    var containers = document.querySelectorAll('.container, .container-fluid');
-    containers.forEach(function(c) {
-      c.classList.toggle('cj-expanded');
-    });
+  window.cjShare = function() {
+    var modal = document.getElementById('cj-share-modal');
+    var embedSection = document.getElementById('cj-share-embed-section');
+    var noSave = document.getElementById('cj-share-nosave');
+    if (CJ_CONFIG.viewId) {
+      var url = window.location.origin + '/chartjs/embed/' + CJ_CONFIG.viewId;
+      document.getElementById('cj-share-url').value = url;
+      document.getElementById('cj-share-iframe').value =
+        '<iframe src="' + url + '" width="100%" height="500" frameborder="0" ' +
+        'style="border:1px solid #e5e7eb;border-radius:8px;"></iframe>';
+      embedSection.style.display = 'block';
+      noSave.style.display = 'none';
+    } else {
+      embedSection.style.display = 'none';
+      noSave.style.display = 'block';
+    }
+    modal.style.display = 'flex';
+  };
+
+  window.cjCloseShare = function() {
+    document.getElementById('cj-share-modal').style.display = 'none';
+  };
+
+  window.cjShareOverlayClick = function(event) {
+    if (event.target === document.getElementById('cj-share-modal')) {
+      window.cjCloseShare();
+    }
+  };
+
+  window.cjCopy = function(id, btn) {
+    var elc = document.getElementById(id);
+    elc.focus();
+    elc.select();
+    var ok = false;
+    try {
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(elc.value);
+        ok = true;
+      } else {
+        ok = document.execCommand('copy');
+      }
+    } catch (e) {
+      ok = false;
+    }
+    if (btn) {
+      var orig = btn.textContent;
+      btn.textContent = ok ? 'Copied!' : 'Press Ctrl+C';
+      setTimeout(function() { btn.textContent = orig; }, 1500);
+    }
+  };
+
+  window.cjDownloadPNG = function() {
+    if (window.ChartJSCKAN && window.ChartJSCKAN.downloadPNG) {
+      var base = CJ_CONFIG.resourceName || 'chart';
+      var ok = window.ChartJSCKAN.downloadPNG(base);
+      if (!ok) {
+        showSaveStatus('Render a chart first', 'error');
+      }
+    }
   };
 
   // Auto-load on page ready

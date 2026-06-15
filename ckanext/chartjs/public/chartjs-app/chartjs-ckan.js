@@ -706,17 +706,57 @@
       color: DEFAULT_COLORS[0],
     }];
 
-    // Build the config panel
-    buildConfigPanel(configPanelEl, fields);
+    // Embed/read-only mode passes a null config panel: skip all editor DOM.
+    var editable = !!configPanelEl;
+    if (editable) {
+      buildConfigPanel(configPanelEl, fields);
+    }
 
     // If saved config, restore it
     if (savedConfig) {
       loadConfig(savedConfig);
-      restoreUIFromConfig(fields);
+      if (editable) restoreUIFromConfig(fields);
     }
 
     // Initial render
     renderChart();
+  }
+
+  function resize() {
+    if (_state.chartInstance) _state.chartInstance.resize();
+  }
+
+  function downloadPNG(filenameBase) {
+    if (!_state.chartInstance || !_state.canvasEl) return false;
+    var src = _state.canvasEl;
+    // Composite onto a white background: the Chart.js canvas is transparent,
+    // which produces an ugly PNG on dark surfaces.
+    var tmp = document.createElement('canvas');
+    tmp.width = src.width;
+    tmp.height = src.height;
+    var ctx = tmp.getContext('2d');
+    ctx.fillStyle = '#ffffff';
+    ctx.fillRect(0, 0, tmp.width, tmp.height);
+    ctx.drawImage(src, 0, 0);
+
+    var url;
+    try {
+      url = tmp.toDataURL('image/png');
+    } catch (e) {
+      return false;
+    }
+
+    var name = (filenameBase || 'chart')
+      .replace(/[^a-z0-9_-]+/gi, '_')
+      .replace(/^_+|_+$/g, '') || 'chart';
+
+    var a = document.createElement('a');
+    a.href = url;
+    a.download = name + '.png';
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    return true;
   }
 
   function destroy() {
@@ -736,6 +776,8 @@
     init: init,
     getConfig: getConfig,
     destroy: destroy,
+    downloadPNG: downloadPNG,
+    resize: resize,
   };
 
 })();

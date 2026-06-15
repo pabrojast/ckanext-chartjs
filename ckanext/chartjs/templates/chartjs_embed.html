@@ -1,0 +1,62 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{{ view_title }}</title>
+  <link rel="stylesheet" href="/chartjs-app/chartjs-ckan.css">
+  <style>
+    html, body { margin: 0; padding: 0; height: 100%; background: #ffffff; }
+    .cj-embed-wrap { box-sizing: border-box; width: 100%; height: 100vh; padding: 12px; display: flex; flex-direction: column; }
+    .cj-embed-canvas-area { flex: 1; min-height: 0; position: relative; }
+    .cj-embed-canvas-area canvas { position: absolute; inset: 0; width: 100% !important; height: 100% !important; }
+  </style>
+</head>
+<body>
+  <div class="cj-embed-wrap">
+    <div id="cj-embed-loading" class="cj-loading" style="min-height:120px;">
+      <div class="cj-spinner"></div>
+    </div>
+    <div id="cj-embed-error" class="cj-error" style="display:none; min-height:120px; padding:20px;">
+      <div class="cj-error-message" id="cj-embed-error-msg">Unable to load chart.</div>
+    </div>
+    <div class="cj-embed-canvas-area" id="cj-embed-canvas-area" style="display:none;">
+      <canvas id="cj-canvas"></canvas>
+    </div>
+  </div>
+
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4/dist/chart.umd.min.js"></script>
+  <script src="/chartjs-app/chartjs-ckan.js"></script>
+  <script>
+  (function() {
+    var CJ_CONFIG = {
+      apiUrl: '{{ api_url }}',
+      savedConfig: {{ chart_config_json | safe }},
+    };
+
+    function showErr(msg) {
+      document.getElementById('cj-embed-loading').style.display = 'none';
+      document.getElementById('cj-embed-canvas-area').style.display = 'none';
+      var e = document.getElementById('cj-embed-error');
+      e.style.display = 'flex';
+      document.getElementById('cj-embed-error-msg').textContent = msg || 'Unable to load chart.';
+    }
+
+    fetch(CJ_CONFIG.apiUrl)
+      .then(function(r) { return r.json(); })
+      .then(function(res) {
+        if (!res.success) { showErr(res.error || 'Failed to load data.'); return; }
+        if (!res.data || res.data.length === 0) { showErr('No data found in this resource.'); return; }
+        document.getElementById('cj-embed-loading').style.display = 'none';
+        document.getElementById('cj-embed-canvas-area').style.display = 'block';
+        if (window.ChartJSCKAN && window.ChartJSCKAN.init) {
+          window.ChartJSCKAN.init(null, document.getElementById('cj-canvas'), res.data, res.fields, CJ_CONFIG.savedConfig);
+        } else {
+          showErr('Chart library failed to load. Please refresh.');
+        }
+      })
+      .catch(function(err) { showErr('Network error: ' + err.message); });
+  })();
+  </script>
+</body>
+</html>
