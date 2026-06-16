@@ -535,3 +535,45 @@
     flex-wrap: wrap;
   }
 }
+
+/* --- Chart empty / placeholder state --- */
+.cj-chart-empty {
+  display: none;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  width: 100%;
+  min-height: 320px;
+  padding: 40px;
+  color: #9ca3af;
+  font-size: 14px;
+  line-height: 1.6;
+}
+
+/* --- Accessibility --- */
+.cj-sr-only {
+  position: absolute !important;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+.cj-btn:focus-visible,
+.cj-btn-modal:focus-visible,
+.cj-retry-btn:focus-visible,
+.cj-chart-type-btn:focus-visible,
+.cj-add-series-btn:focus-visible,
+.cj-modal-close:focus-visible,
+.cj-series-remove-btn:focus-visible,
+.cj-select:focus-visible,
+.cj-input:focus-visible,
+.cj-color-input:focus-visible,
+.cj-checkbox-row input[type="checkbox"]:focus-visible {
+  outline: 2px solid #0072B2;
+  outline-offset: 2px;
+}

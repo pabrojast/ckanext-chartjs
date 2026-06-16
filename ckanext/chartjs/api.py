@@ -3,18 +3,31 @@
 Flask blueprint for Chart.js API endpoints.
 Serves CSV resource data as JSON for the frontend.
 """
-import csv
-import io
 import os
 import json
+import logging
 
 from flask import Blueprint, jsonify, request, g
 import ckan.plugins.toolkit as toolkit
+
+from . import datautils
 
 chartjs_api = Blueprint(
     'chartjs',
     __name__,
 )
+
+log = logging.getLogger(__name__)
+
+# Whitelists + bounds for chart_config validation (see _validate_chart_config).
+_ALLOWED_CHART_TYPES = {'bar', 'line', 'pie', 'doughnut', 'scatter', 'radar', 'polarArea'}
+_ALLOWED_AGG = {'sum', 'count', 'average', 'min', 'max'}
+_ALLOWED_SORT = {'none', 'value_desc', 'value_asc', 'label_asc', 'label_desc'}
+_MAX_CONFIG_BYTES = 65536
+_MAX_TEXT = 255
+_MAX_SHORT = 100
+_MAX_TINY = 32
+_MAX_SERIES = 50
 
 
 def _get_max_rows():
@@ -102,7 +115,7 @@ def _http_fetch(url, headers=None, timeout=60):
             if v:
                 req.add_header(k, v)
         with urllib.request.urlopen(req, timeout=timeout) as resp:
-            return resp.read().decode('utf-8', errors='replace')
+            return resp.read()
     except Exception as e:
         if os.getenv("CJ_DEBUG", "false").lower() == "true":
             print(f"[chartjs] HTTP fetch failed for {url}: {e}")
@@ -136,7 +149,7 @@ def _try_direct_csv(resource_id, max_rows):
             if hasattr(uploader, 'get_path'):
                 upload_path = uploader.get_path(resource.id)
                 if upload_path and isinstance(upload_path, str) and os.path.exists(upload_path):
-                    with open(upload_path, 'r', encoding='utf-8', errors='replace') as f:
+                    with open(upload_path, 'rb') as f:
                         content = f.read()
         except Exception:
             pass
@@ -179,104 +192,12 @@ def _try_direct_csv(resource_id, max_rows):
         if content is None:
             return None, None, None
 
-        return _parse_csv_content(content, max_rows)
+        return datautils.parse_csv(content, max_rows)
 
     except Exception as e:
         if os.getenv("CJ_DEBUG", "false").lower() == "true":
             print(f"[chartjs] CSV download error: {e}")
         return None, None, None
-
-
-def _parse_csv_content(content, max_rows):
-    """Parse CSV content string into records and field metadata."""
-    reader = csv.DictReader(io.StringIO(content))
-
-    if not reader.fieldnames:
-        return [], [], 0
-
-    records = []
-    for i, row in enumerate(reader):
-        if i >= max_rows:
-            break
-        clean_row = {}
-        for k, v in row.items():
-            if v is None:
-                clean_row[k] = ''
-            else:
-                # Try to convert numeric values
-                try:
-                    if '.' in v:
-                        clean_row[k] = float(v)
-                    else:
-                        clean_row[k] = int(v)
-                except (ValueError, TypeError):
-                    clean_row[k] = v
-        records.append(clean_row)
-
-    total = len(records)
-
-    # Infer field types from first N rows
-    sample_size = min(100, total)
-    fields = []
-    for col_name in reader.fieldnames:
-        if not col_name or not col_name.strip():
-            continue
-        col_name = col_name.strip()
-        semantic_type = _infer_semantic_type_from_sample(
-            [r.get(col_name) for r in records[:sample_size]]
-        )
-        analytic_type = 'measure' if semantic_type == 'quantitative' else 'dimension'
-        fields.append({
-            'fid': col_name,
-            'name': col_name,
-            'semanticType': semantic_type,
-            'analyticType': analytic_type,
-        })
-
-    return records, fields, total
-
-
-def _infer_semantic_type_from_sample(values):
-    """Infer semantic type from a sample of values."""
-    import re
-    date_patterns = [
-        re.compile(r'^\d{4}[-/]\d{1,2}[-/]\d{1,2}'),
-        re.compile(r'^\d{1,2}[-/]\d{1,2}[-/]\d{4}'),
-    ]
-
-    numeric_count = 0
-    date_count = 0
-    total = 0
-
-    for v in values:
-        if v is None or v == '':
-            continue
-        total += 1
-        if isinstance(v, (int, float)):
-            numeric_count += 1
-            continue
-        s = str(v).strip()
-        if s == '':
-            continue
-        try:
-            float(s)
-            numeric_count += 1
-            continue
-        except (ValueError, TypeError):
-            pass
-        for pat in date_patterns:
-            if pat.match(s):
-                date_count += 1
-                break
-
-    if total == 0:
-        return 'nominal'
-
-    if numeric_count / total > 0.8:
-        return 'quantitative'
-    if date_count / total > 0.8:
-        return 'temporal'
-    return 'nominal'
 
 
 @chartjs_api.route('/api/chartjs/data/<resource_id>', methods=['GET'])
@@ -289,6 +210,23 @@ def get_resource_data(resource_id):
     """
     max_rows = _get_max_rows()
     user = _get_request_user()
+
+    filter_string = request.args.get('filters', '')
+
+    def _apply_filters(records, fields):
+        """Apply URL filters post-load against the field whitelist. Never
+        raises out: a malformed filter degrades to 'no filtering'."""
+        if not filter_string:
+            return records
+        try:
+            parsed = datautils.parse_filters(filter_string)
+            if parsed:
+                allowed = [f['fid'] for f in fields]
+                return datautils.apply_filters(records, parsed, allowed)
+        except Exception:
+            if _is_cj_debug():
+                log.warning('[chartjs] filter apply failed for resource %s', resource_id)
+        return records
 
     # Gate access through resource_show: matches what CKAN would do for
     # a logged-in user viewing the resource page. Returns 403 for users
@@ -308,12 +246,13 @@ def get_resource_data(resource_id):
     records, fields, total = _try_datastore(resource_id, max_rows, user)
 
     if records is not None:
+        records = _apply_filters(records, fields)
         return jsonify({
             'success': True,
             'source': 'datastore',
             'data': records,
             'fields': fields,
-            'total': total,
+            'total': len(records),
             'max_rows': max_rows,
         })
 
@@ -321,12 +260,13 @@ def get_resource_data(resource_id):
     records, fields, total = _try_direct_csv(resource_id, max_rows)
 
     if records is not None:
+        records = _apply_filters(records, fields)
         return jsonify({
             'success': True,
             'source': 'csv',
             'data': records,
             'fields': fields,
-            'total': total,
+            'total': len(records),
             'max_rows': max_rows,
         })
 
@@ -334,6 +274,126 @@ def get_resource_data(resource_id):
         'success': False,
         'error': 'Could not load data from this resource. Ensure it is a valid CSV file.',
     }), 404
+
+
+def _is_cj_debug():
+    return os.getenv('CJ_DEBUG', 'false').lower() == 'true'
+
+
+def _clean_string(value, max_len=_MAX_TEXT):
+    """Return value as a length-capped string ('' if not a string).
+
+    Python str slicing is by code point, so this never splits a character.
+    We intentionally do NOT strip characters like & or quotes: titles/labels
+    legitimately contain them, and the values are rendered on the Chart.js
+    canvas (not as HTML), so input mangling would corrupt data without
+    removing a real sink.
+    """
+    if not isinstance(value, str):
+        return ''
+    return value[:max_len]
+
+
+def _coerce_bool(value, default=False):
+    """Robust boolean coercion. Note bool('false') is True, so we must not
+    rely on bool() for string inputs."""
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, (int, float)):
+        return value != 0
+    if isinstance(value, str):
+        v = value.strip().lower()
+        if v in ('true', '1', 'yes', 'on'):
+            return True
+        if v in ('false', '0', 'no', 'off', ''):
+            return False
+    return default
+
+
+def _clamp_int(value, default, min_value, max_value):
+    try:
+        n = int(value)
+    except (ValueError, TypeError):
+        return default
+    if n < min_value:
+        return min_value
+    if n > max_value:
+        return max_value
+    return n
+
+
+def _validate_chart_config(config_str):
+    """Validate + normalize a chart_config JSON string against a strict whitelist.
+
+    Returns a cleaned, re-serialized JSON string containing only known fields
+    with bounded types/sizes. Raises ValueError (with safe, generic messages)
+    on structurally invalid input. This prevents persisting arbitrary or
+    oversized payloads through the save endpoint.
+    """
+    if not isinstance(config_str, str):
+        raise ValueError('Config must be a JSON string.')
+    if len(config_str.encode('utf-8')) > _MAX_CONFIG_BYTES:
+        raise ValueError('Config is too large.')
+    try:
+        cfg = json.loads(config_str)
+    except (json.JSONDecodeError, TypeError):
+        raise ValueError('Config must be valid JSON.')
+    if not isinstance(cfg, dict):
+        raise ValueError('Config must be a JSON object.')
+
+    chart_type = cfg.get('chartType')
+    if chart_type not in _ALLOWED_CHART_TYPES:
+        raise ValueError('Unknown chart type.')
+
+    clean = {
+        'version': _clamp_int(cfg.get('version', 1), 1, 1, 99),
+        'chartType': chart_type,
+        'title': _clean_string(cfg.get('title', '')),
+        'xAxis': _clean_string(cfg.get('xAxis', '')),
+    }
+
+    clean_series = []
+    series_in = cfg.get('series')
+    if isinstance(series_in, list):
+        for s in series_in[:_MAX_SERIES]:
+            if not isinstance(s, dict):
+                continue
+            agg = s.get('aggregation')
+            clean_series.append({
+                'yField': _clean_string(s.get('yField', '')),
+                'label': _clean_string(s.get('label', '')),
+                'aggregation': agg if agg in _ALLOWED_AGG else 'sum',
+                'color': _clean_string(s.get('color', ''), _MAX_TINY),
+            })
+    clean['series'] = clean_series
+
+    opts_in = cfg.get('options')
+    opts = opts_in if isinstance(opts_in, dict) else {}
+    sort_mode = opts.get('categorySort')
+    nf_in = opts.get('numberFormat')
+    nf = nf_in if isinstance(nf_in, dict) else {}
+    clean['options'] = {
+        'showLegend': _coerce_bool(opts.get('showLegend'), True),
+        'showGrid': _coerce_bool(opts.get('showGrid'), True),
+        'stacked': _coerce_bool(opts.get('stacked'), False),
+        'beginAtZero': _coerce_bool(opts.get('beginAtZero'), True),
+        'showOthers': _coerce_bool(opts.get('showOthers'), False),
+        'horizontalBars': _coerce_bool(opts.get('horizontalBars'), False),
+        'categorySort': sort_mode if sort_mode in _ALLOWED_SORT else 'none',
+        'topN': _clamp_int(opts.get('topN', 0), 0, 0, 100),
+        'othersLabel': _clean_string(opts.get('othersLabel', 'Others'), _MAX_SHORT) or 'Others',
+        'xAxisTitle': _clean_string(opts.get('xAxisTitle', ''), _MAX_SHORT),
+        'yAxisTitle': _clean_string(opts.get('yAxisTitle', ''), _MAX_SHORT),
+        'numberFormat': {
+            'decimalsMode': 'fixed' if nf.get('decimalsMode') == 'fixed' else 'auto',
+            'decimals': _clamp_int(nf.get('decimals', 2), 2, 0, 6),
+            'useThousands': _coerce_bool(nf.get('useThousands'), True),
+            'prefix': _clean_string(nf.get('prefix', ''), 16),
+            'suffix': _clean_string(nf.get('suffix', ''), 16),
+        },
+    }
+
+    return json.dumps(clean)
 
 
 @chartjs_api.route('/api/chartjs/view/<view_id>/save-config', methods=['POST'])
@@ -359,11 +419,12 @@ def save_view_config(view_id):
             except (TypeError, ValueError):
                 return jsonify({'success': False, 'error': 'Invalid config format.'}), 400
 
-        # Validate it's valid JSON
+        # Validate + normalize against a strict whitelist; persist the cleaned
+        # JSON, never the raw client payload.
         try:
-            json.loads(config)
-        except (json.JSONDecodeError, TypeError):
-            return jsonify({'success': False, 'error': 'Config must be valid JSON.'}), 400
+            config = _validate_chart_config(config)
+        except ValueError as ve:
+            return jsonify({'success': False, 'error': str(ve)}), 400
 
         context = {'user': user, 'ignore_auth': False}
 
@@ -388,7 +449,9 @@ def save_view_config(view_id):
         except toolkit.NotAuthorized:
             return jsonify({'success': False, 'error': 'Not authorized to update this view.'}), 403
         except Exception as e:
-            return jsonify({'success': False, 'error': f'Failed to save: {str(e)}'}), 500
+            if _is_cj_debug():
+                log.warning('[chartjs] resource_view_update failed for view %s: %s', view_id, e)
+            return jsonify({'success': False, 'error': 'Failed to save chart configuration.'}), 500
 
         return jsonify({
             'success': True,
@@ -397,6 +460,6 @@ def save_view_config(view_id):
         })
 
     except Exception as e:
-        if os.getenv("CJ_DEBUG", "false").lower() == "true":
-            print(f"[chartjs] Save error: {e}")
-        return jsonify({'success': False, 'error': f'Server error: {str(e)}'}), 500
+        if _is_cj_debug():
+            log.warning('[chartjs] Save error for view %s: %s', view_id, e)
+        return jsonify({'success': False, 'error': 'Internal server error.'}), 500

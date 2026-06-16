@@ -80,6 +80,7 @@
   </div>
 </div>
 
+<script>window.CJ_I18N = {{ cj_i18n | tojson }};</script>
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4/dist/chart.umd.min.js"></script>
 <script src="/chartjs-app/chartjs-ckan.js"></script>
 <script>
@@ -92,6 +93,25 @@
     viewId: '{{ view_id }}',
     savedConfig: {{ chart_config_json | safe }},
   };
+
+  function cjApiUrl() {
+    var url = CJ_CONFIG.apiUrl;
+    try {
+      var f = new URLSearchParams(window.location.search).get('filters');
+      if (f) {
+        url += (url.indexOf('?') === -1 ? '?' : '&') + 'filters=' + encodeURIComponent(f);
+      }
+    } catch (e) {}
+    return url;
+  }
+
+  function cjHasFilters() {
+    try {
+      return !!new URLSearchParams(window.location.search).get('filters');
+    } catch (e) {
+      return false;
+    }
+  }
 
   function showLoading() {
     document.getElementById('cj-loading').style.display = 'flex';
@@ -186,7 +206,7 @@
   window.cjLoadData = function() {
     showLoading();
 
-    fetch(CJ_CONFIG.apiUrl)
+    fetch(cjApiUrl())
       .then(function(resp) { return resp.json(); })
       .then(function(result) {
         if (!result.success) {
@@ -198,7 +218,7 @@
         var fields = result.fields;
 
         if (!data || data.length === 0) {
-          showError('No data found in this resource.');
+          showError(cjHasFilters() ? 'No rows match the current filters.' : 'No data found in this resource.');
           return;
         }
 
