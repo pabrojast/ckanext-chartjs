@@ -132,4 +132,51 @@ assert.strictEqual(mt.rows[0][2], '7');
 var mr = cj.buildAccessibleTableModel(tsData, { chartType: 'scatter' }, idt, false);
 assert.strictEqual(mr.rows[0][1], String(Date.UTC(2020, 0, 15)));
 
+// --- C3 debounce ---
+(function () {
+  var fakeNow = 0, nextId = 1, pending = {};
+  var sched = {
+    set: function (cb, d) { var id = nextId++; pending[id] = { cb: cb, due: fakeNow + d }; return id; },
+    clear: function (id) { delete pending[id]; }
+  };
+  function tick(ms) {
+    fakeNow += ms;
+    for (var id in pending) {
+      if (pending[id].due <= fakeNow) { var cb = pending[id].cb; delete pending[id]; cb(); }
+    }
+  }
+  var calls = 0;
+  var d = cj.makeDebounce(function () { calls++; }, 100, sched);
+  d(); d(); d();
+  assert.strictEqual(calls, 0);          // nothing fired yet
+  tick(100);
+  assert.strictEqual(calls, 1);          // three rapid calls coalesced into one
+  d();
+  d.cancel();
+  tick(200);
+  assert.strictEqual(calls, 1);          // cancel discarded the pending call
+  d();
+  d.flush();
+  assert.strictEqual(calls, 2);          // flush ran it immediately
+  tick(200);
+  assert.strictEqual(calls, 2);          // and nothing extra fired
+})();
+
+// --- C3 aggregateData cache (correctness + copy-safety) ---
+var arows = [
+  { c: 'a', v: 1 }, { c: 'a', v: 2 }, { c: 'b', v: 10 }, { c: 'b', v: '' }
+];
+var r1 = cj.aggregateData(arows, 'c', 'v', 'sum');
+assert.deepStrictEqual(r1.labels, ['a', 'b']);
+assert.deepStrictEqual(r1.values, [3, 10]);
+// mutate the returned arrays; the cache must not be corrupted
+r1.labels.push('ZZZ');
+r1.values[0] = 9999;
+var r2 = cj.aggregateData(arows, 'c', 'v', 'sum');
+assert.deepStrictEqual(r2.labels, ['a', 'b']);   // unaffected by the mutation above
+assert.deepStrictEqual(r2.values, [3, 10]);
+// different method is a distinct cache entry
+var r3 = cj.aggregateData(arows, 'c', 'v', 'count');
+assert.deepStrictEqual(r3.values, [2, 1]);        // 'b' has one numeric value
+
 console.log('JS unit tests passed');

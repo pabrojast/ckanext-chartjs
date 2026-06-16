@@ -54,6 +54,35 @@
     return fallback;
   }
 
+  // Testable debounce: coalesces rapid calls into one trailing call after
+  // `delay` ms. `scheduler` is injectable so tests can drive a fake clock.
+  function makeDebounce(fn, delay, scheduler) {
+    scheduler = scheduler || { set: setTimeout, clear: clearTimeout };
+    var timer = null;
+    function debounced() {
+      var ctx = this, args = arguments;
+      if (timer !== null) scheduler.clear(timer);
+      timer = scheduler.set(function () {
+        timer = null;
+        fn.apply(ctx, args);
+      }, delay);
+    }
+    debounced.flush = function () {
+      if (timer !== null) {
+        scheduler.clear(timer);
+        timer = null;
+        fn();
+      }
+    };
+    debounced.cancel = function () {
+      if (timer !== null) {
+        scheduler.clear(timer);
+        timer = null;
+      }
+    };
+    return debounced;
+  }
+
   var _state = {
     rawData: [],
     fields: [],
@@ -90,6 +119,16 @@
       },
     },
   };
+
+  // Memo cache for aggregateData. rawData is constant within a session (filters
+  // are applied server-side before data reaches the client), so caching by
+  // (xField, yField, method) is safe; it is cleared on init()/destroy().
+  var _aggCache = {};
+  var _AGG_CACHE_MAX = 200;
+
+  // Debounced render: config state is mutated synchronously by onConfigChange,
+  // so getConfig() always reflects the latest state even if the paint lags.
+  var _debouncedRender = makeDebounce(renderChart, 120);
 
   // ============================================================
   // Module 2: Data Processing
@@ -144,6 +183,13 @@
   }
 
   function aggregateData(rawData, xField, yField, method) {
+    // Prototype-safe structural key (never literally '__proto__').
+    var key = JSON.stringify([xField, yField, method]);
+    var hit = _aggCache[key];
+    if (hit) {
+      return { labels: hit.labels.slice(), values: hit.values.slice() };
+    }
+
     var grouped = groupBy(rawData, xField);
     var labels = grouped.keys;
     var values = [];
@@ -155,7 +201,22 @@
       }
       values.push(aggregate(yValues, method));
     }
-    return { labels: labels, values: values };
+
+    // Bound the cache (cheap DoS guard against cycling through many field combos).
+    if (countKeys(_aggCache) >= _AGG_CACHE_MAX) {
+      _aggCache = {};
+    }
+    _aggCache[key] = { labels: labels, values: values };
+    // Return copies so callers / Chart.js can never mutate the cached arrays.
+    return { labels: labels.slice(), values: values.slice() };
+  }
+
+  function countKeys(obj) {
+    var n = 0;
+    for (var k in obj) {
+      if (Object.prototype.hasOwnProperty.call(obj, k)) n++;
+    }
+    return n;
   }
 
   // Build one aligned row per category label, with each series' aggregated value.
@@ -772,7 +833,9 @@
   // ============================================================
 
   function onConfigChange() {
-    renderChart();
+    // _state.config was already mutated synchronously by the caller, so
+    // getConfig() is current; only the paint is debounced.
+    _debouncedRender();
   }
 
   function getRenderState(config) {
@@ -1392,6 +1455,7 @@
   }
 
   function init(configPanelEl, canvasEl, data, fields, savedConfig) {
+    _aggCache = {};
     _state.rawData = data;
     _state.fields = fields;
     _state.configPanelEl = configPanelEl;
@@ -1428,6 +1492,8 @@
     }
     _state.rawData = [];
     _state.fields = [];
+    _aggCache = {};
+    if (_debouncedRender && _debouncedRender.cancel) _debouncedRender.cancel();
   }
 
   // ============================================================
@@ -1446,6 +1512,7 @@
   if (typeof module !== 'undefined' && module.exports) {
     module.exports = {
       t: t,
+      makeDebounce: makeDebounce,
       aggregate: aggregate,
       aggregateData: aggregateData,
       sortAggregatedRows: sortAggregatedRows,

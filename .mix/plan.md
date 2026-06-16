@@ -67,7 +67,7 @@ Gaps detectados (código + asesores Codex/DeepSeek):
 ### 🔴 Tier C — Esfuerzo grande / arquitectónico
 - **C1. Agregación server-side** — `datastore_search_sql` (parametrizado) para DataStore; agregación incremental en streaming para CSV. Reduce payload 2-3 órdenes de magnitud. *Impacto: alto · Esfuerzo: M-L · seguridad-sensible.*
 - **C2. `chart_config` v2 + migración** — esquema versionado, normalización y migración v1→v2 sin romper vistas guardadas. *Impacto: alto · Esfuerzo: M.*
-- **C3. Performance del editor** — debounce de inputs, no destruir/recrear el chart en cada cambio, cache de agregaciones. *Impacto: alto · Esfuerzo: M.*
+- **C3. Performance del editor** — ✅ HECHO (parcial): debounce del render (`makeDebounce`, 120ms) + memo-cache de `aggregateData` (key JSON-safe, copias, cap, invalidado en init/destroy). El **update in-place** (no destruir/recrear) NO se hizo: deuda deliberada (alto riesgo de escalas stale en transiciones time↔categórico/horizontal/scatter, beneficio no probado; condicionado a profiling).
 
 ---
 
