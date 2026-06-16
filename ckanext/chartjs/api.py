@@ -384,6 +384,8 @@ def _validate_chart_config(config_str):
         'othersLabel': _clean_string(opts.get('othersLabel', 'Others'), _MAX_SHORT) or 'Others',
         'xAxisTitle': _clean_string(opts.get('xAxisTitle', ''), _MAX_SHORT),
         'yAxisTitle': _clean_string(opts.get('yAxisTitle', ''), _MAX_SHORT),
+        'timeAxis': opts.get('timeAxis') if opts.get('timeAxis') in ('auto', 'on', 'off') else 'auto',
+        'timeUnit': opts.get('timeUnit') if opts.get('timeUnit') in ('auto', 'hour', 'day', 'week', 'month', 'quarter', 'year') else 'auto',
         'numberFormat': {
             'decimalsMode': 'fixed' if nf.get('decimalsMode') == 'fixed' else 'auto',
             'decimals': _clamp_int(nf.get('decimals', 2), 2, 0, 6),

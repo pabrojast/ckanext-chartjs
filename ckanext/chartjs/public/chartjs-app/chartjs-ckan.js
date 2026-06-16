@@ -85,6 +85,8 @@
           prefix: '',
           suffix: '',
         },
+        timeAxis: 'auto',
+        timeUnit: 'auto',
       },
     },
   };
@@ -267,6 +269,64 @@
       }
     }
     return points;
+  }
+
+  // Pure: parse a date-ish value to a UTC timestamp (ms), or null. Bounded
+  // length + anchored fixed regexes (ReDoS-safe). Dates without a time are
+  // pinned to UTC midnight so chronological grouping is timezone-stable.
+  function parseTimeValue(v) {
+    if (v === null || v === undefined || v === '') return null;
+    if (typeof v === 'number') return isFinite(v) ? v : null;
+    var s = String(v).trim();
+    if (s.length === 0 || s.length > 25) return null;
+    if (s.indexOf('T') !== -1) {           // ISO with time -> honor embedded zone
+      var ti = Date.parse(s);
+      return isNaN(ti) ? null : ti;
+    }
+    var iso = s.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+    if (iso) {
+      var y = +iso[1], mo = +iso[2], d = +iso[3];
+      if (mo >= 1 && mo <= 12 && d >= 1 && d <= 31) return Date.UTC(y, mo - 1, d);
+      return null;
+    }
+    var dmy = s.match(/^(\d{1,2})[\/-](\d{1,2})[\/-](\d{4})$/);
+    if (dmy) {
+      var dd = +dmy[1], mm = +dmy[2], yy = +dmy[3];
+      if (mm >= 1 && mm <= 12 && dd >= 1 && dd <= 31) return Date.UTC(yy, mm - 1, dd);
+      return null;
+    }
+    return null;
+  }
+
+  // Pure-ish: aggregate per series, parse X to timestamps, drop unparseable
+  // buckets, sort chronologically. Returns {datasets:[{label,data:[{x,y}]}]}
+  // with NO labels (Chart.js time scale reads x). Separate from the categorical
+  // pipeline: sort/topN/Others do NOT apply to a continuous time axis.
+  function buildTimeSeriesData(rawData, xField, series) {
+    var datasets = [];
+    for (var i = 0; i < series.length; i++) {
+      var s = series[i];
+      var agg = aggregateData(rawData, xField, s.yField, s.aggregation);
+      var points = [];
+      for (var j = 0; j < agg.labels.length; j++) {
+        var ts = parseTimeValue(agg.labels[j]);
+        if (ts === null) continue;
+        points.push({ x: ts, y: agg.values[j] });
+      }
+      points.sort(function (a, b) { return a.x - b.x; });
+      datasets.push({
+        label: s.label || s.yField,
+        data: points,
+        backgroundColor: hexToRgba(s.color, 0.7),
+        borderColor: s.color,
+        borderWidth: 2,
+        tension: 0.3,
+        fill: false,
+        pointBackgroundColor: s.color,
+        pointRadius: 3,
+      });
+    }
+    return { datasets: datasets };
   }
 
   function inferBestDefaults(fields) {
@@ -458,6 +518,29 @@
     dispContent.appendChild(createCheckbox('cj-opt-hbars', t('opt.horizontalBars', 'Horizontal bars (bar chart)'), _state.config.options.horizontalBars, function(v) {
       _state.config.options.horizontalBars = v; onConfigChange();
     }));
+
+    var timeAxisCtl = createLabeledSelect(t('opt.timeAxis', 'Time axis'), [
+      { id: 'auto', label: t('time.auto', 'Auto (date fields)') },
+      { id: 'on',   label: t('time.on', 'On') },
+      { id: 'off',  label: t('time.off', 'Off') },
+    ], _state.config.options.timeAxis, function (v) {
+      _state.config.options.timeAxis = v; onConfigChange();
+    });
+    timeAxisCtl.control.id = 'cj-opt-timeaxis';
+    dispContent.appendChild(timeAxisCtl.row);
+
+    var timeUnitCtl = createLabeledSelect(t('opt.timeUnit', 'Time unit'), [
+      { id: 'auto', label: t('unit.auto', 'Auto') },
+      { id: 'day', label: t('unit.day', 'Day') },
+      { id: 'week', label: t('unit.week', 'Week') },
+      { id: 'month', label: t('unit.month', 'Month') },
+      { id: 'quarter', label: t('unit.quarter', 'Quarter') },
+      { id: 'year', label: t('unit.year', 'Year') },
+    ], _state.config.options.timeUnit, function (v) {
+      _state.config.options.timeUnit = v; onConfigChange();
+    });
+    timeUnitCtl.control.id = 'cj-opt-timeunit';
+    dispContent.appendChild(timeUnitCtl.row);
 
     var nf = _state.config.options.numberFormat;
 
@@ -750,7 +833,7 @@
 
   // Pure: build an accessible data-table MODEL (structure, never HTML). The DOM
   // renderer inserts these strings via textContent, so values are always literal.
-  function buildAccessibleTableModel(chartData, config, tr) {
+  function buildAccessibleTableModel(chartData, config, tr, isTime) {
     tr = tr || function (k, f) { return f; };
     var model = { caption: '', headers: [], rows: [] };
     if (!chartData || !chartData.datasets || chartData.datasets.length === 0) {
@@ -759,14 +842,18 @@
     }
     model.caption = config.title || tr('a11y.table.caption', 'Chart data');
 
-    if (config.chartType === 'scatter') {
+    var pointShaped = chartData.datasets[0] && Array.isArray(chartData.datasets[0].data) &&
+      chartData.datasets[0].data.length > 0 && chartData.datasets[0].data[0] &&
+      typeof chartData.datasets[0].data[0] === 'object';
+    if (config.chartType === 'scatter' || pointShaped) {
       model.headers = [tr('a11y.col.series', 'Series'), 'X', 'Y'];
       for (var i = 0; i < chartData.datasets.length; i++) {
         var ds = chartData.datasets[i];
         var label = ds.label || ('Series ' + (i + 1));
         var pts = ds.data || [];
         for (var p = 0; p < pts.length; p++) {
-          model.rows.push([label, String(pts[p].x), String(pts[p].y)]);
+          var xv = isTime ? new Date(pts[p].x).toISOString().slice(0, 10) : String(pts[p].x);
+          model.rows.push([label, xv, String(pts[p].y)]);
         }
       }
       return model;
@@ -868,10 +955,10 @@
     container.appendChild(table);
   }
 
-  function syncA11yView(chartData) {
+  function syncA11yView(chartData, isTime) {
     var nodes = ensureA11yNodes();
     if (!nodes) return;
-    var model = buildAccessibleTableModel(chartData, _state.config, t);
+    var model = buildAccessibleTableModel(chartData, _state.config, t, isTime);
     renderA11yTable(nodes.table, model);
     var summary = buildChartAriaSummary(chartData, _state.config, t);
     if (_state.canvasEl) {
@@ -879,6 +966,37 @@
       _state.canvasEl.setAttribute('aria-label', summary);
     }
     nodes.live.textContent = t('a11y.live.updated', 'Chart updated') + ': ' + summary;
+  }
+
+  function getFieldType(fid) {
+    for (var i = 0; i < _state.fields.length; i++) {
+      if (_state.fields[i].fid === fid) return _state.fields[i].semanticType;
+    }
+    return 'nominal';
+  }
+
+  // Whether Chart.js has a date adapter registered (loaded from the template).
+  function timeAdapterAvailable() {
+    try {
+      return typeof Chart !== 'undefined' && Chart._adapters && Chart._adapters._date &&
+        typeof Chart._adapters._date.parse === 'function';
+    } catch (e) {
+      return false;
+    }
+  }
+
+  // Decide if the X axis should be a time scale. 'off' disables; 'on' forces;
+  // 'auto' activates only for a temporal X field. Only line/scatter/bar; never
+  // horizontal bars; never without the date adapter (graceful degradation).
+  function isTimeAxis(config) {
+    var mode = config.options.timeAxis || 'auto';
+    if (mode === 'off') return false;
+    var ct = config.chartType;
+    if (ct !== 'line' && ct !== 'scatter' && ct !== 'bar') return false;
+    if (ct === 'bar' && config.options.horizontalBars) return false;
+    if (!timeAdapterAvailable()) return false;
+    if (mode === 'on') return true;
+    return getFieldType(config.xAxis) === 'temporal';
   }
 
   function renderChart() {
@@ -904,15 +1022,25 @@
     }
 
     var chartData = {};
-    var chartOptions = buildChartOptions(config);
 
-    if (chartType === 'scatter') {
-      chartData = buildScatterChartData(rawData, series);
-    } else if (chartType === 'pie' || chartType === 'doughnut' || chartType === 'polarArea') {
-      chartData = buildPieChartData(rawData, xAxis, series, opts);
-    } else {
-      chartData = buildStandardChartData(rawData, xAxis, series, opts);
+    var useTime = isTimeAxis(config);
+    if (useTime) {
+      chartData = buildTimeSeriesData(rawData, xAxis, series);
+      if (!chartHasData(chartData)) {
+        useTime = false;  // conservative fallback: nothing parsed -> categorical
+      }
     }
+    if (!useTime) {
+      if (chartType === 'scatter') {
+        chartData = buildScatterChartData(rawData, series);
+      } else if (chartType === 'pie' || chartType === 'doughnut' || chartType === 'polarArea') {
+        chartData = buildPieChartData(rawData, xAxis, series, opts);
+      } else {
+        chartData = buildStandardChartData(rawData, xAxis, series, opts);
+      }
+    }
+
+    var chartOptions = buildChartOptions(config, useTime);
 
     if (!chartHasData(chartData)) {
       showChartEmpty(t('msg.noData', 'No data to display for the selected fields.'));
@@ -927,7 +1055,7 @@
       options: chartOptions,
     });
 
-    syncA11yView(chartData);
+    syncA11yView(chartData, useTime);
   }
 
   function buildStandardChartData(rawData, xAxis, series, opts) {
@@ -1000,7 +1128,7 @@
     return { datasets: datasets };
   }
 
-  function buildChartOptions(config) {
+  function buildChartOptions(config, useTime) {
     var opts = config.options;
     var chartType = config.chartType;
     var isPie = chartType === 'pie' || chartType === 'doughnut' || chartType === 'polarArea';
@@ -1095,6 +1223,14 @@
       options.scales[valueKey].ticks.callback = function(value) {
         return formatNumber(value, config.options.numberFormat);
       };
+
+      if (useTime) {
+        options.scales.x.type = 'time';
+        var tu = config.options.timeUnit;
+        if (tu && tu !== 'auto') {
+          options.scales.x.time = { unit: tu };
+        }
+      }
     }
 
     return options;
@@ -1189,6 +1325,10 @@
         prefix: typeof savedNf.prefix === 'string' ? savedNf.prefix : '',
         suffix: typeof savedNf.suffix === 'string' ? savedNf.suffix : '',
       };
+      var allowedTimeAxis = { auto: 1, on: 1, off: 1 };
+      _state.config.options.timeAxis = allowedTimeAxis[saved.options.timeAxis] ? saved.options.timeAxis : 'auto';
+      var allowedUnits = { auto: 1, hour: 1, day: 1, week: 1, month: 1, quarter: 1, year: 1 };
+      _state.config.options.timeUnit = allowedUnits[saved.options.timeUnit] ? saved.options.timeUnit : 'auto';
     }
   }
 
@@ -1244,6 +1384,11 @@
     if (optPrefix) optPrefix.value = nf2.prefix;
     var optSuffix = document.getElementById('cj-opt-suffix');
     if (optSuffix) optSuffix.value = nf2.suffix;
+
+    var optTimeAxis = document.getElementById('cj-opt-timeaxis');
+    if (optTimeAxis) optTimeAxis.value = _state.config.options.timeAxis;
+    var optTimeUnit = document.getElementById('cj-opt-timeunit');
+    if (optTimeUnit) optTimeUnit.value = _state.config.options.timeUnit;
   }
 
   function init(configPanelEl, canvasEl, data, fields, savedConfig) {
@@ -1306,6 +1451,8 @@
       sortAggregatedRows: sortAggregatedRows,
       applyTopNAndOthers: applyTopNAndOthers,
       buildCategoryRows: buildCategoryRows,
+      parseTimeValue: parseTimeValue,
+      buildTimeSeriesData: buildTimeSeriesData,
       formatNumber: formatNumber,
       buildAccessibleTableModel: buildAccessibleTableModel,
       buildChartAriaSummary: buildChartAriaSummary,

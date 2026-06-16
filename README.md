@@ -78,6 +78,33 @@ ckanext.chartjs.max_rows = 50000
    - Toggle options (legend, grid, stacked, etc.)
 6. Click **Save** to persist your chart configuration
 
+## Time axis (date fields)
+
+When a chart's X-axis field holds full dates (e.g. `YYYY-MM-DD`), line, bar and
+scatter charts can render a real **time axis** with chronological ordering. The
+**Display → Time axis** control offers:
+
+- **Auto** (default): a time scale is used automatically when the X field is a
+  date column; otherwise the chart stays categorical.
+- **On / Off**: force or disable the time scale.
+
+**Time unit** (Auto / Day / Week / Month / Quarter / Year) controls the axis
+tick granularity.
+
+Dates without a time component are interpreted as UTC midnight for stable
+chronological grouping. Values that cannot be parsed as dates are dropped from a
+time-series chart.
+
+The time scale needs Chart.js's date adapter, loaded from jsDelivr:
+
+```html
+<script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-date-fns@3/dist/chartjs-adapter-date-fns.bundle.min.js"></script>
+```
+
+For air-gapped deployments, self-host that file alongside `chart.umd.min.js`
+(see *Air-gapped / Offline Environments*) and point the `<script src>` at your
+local copy. If the adapter fails to load, charts fall back to a categorical axis.
+
 ## Air-gapped / Offline Environments
 
 By default, Chart.js is loaded from the jsDelivr CDN. For environments without internet access:

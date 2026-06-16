@@ -92,4 +92,44 @@ assert.strictEqual(cj.t('x.y', 'fb'), 'traducido');            // hit
 assert.strictEqual(cj.t('missing', 'fb'), 'fb');               // miss -> fallback
 delete global.window;
 
+// --- B3 temporal pipeline ---
+// parseTimeValue
+assert.strictEqual(cj.parseTimeValue('2020-01-15'), Date.UTC(2020, 0, 15));
+assert.strictEqual(cj.parseTimeValue('15/01/2020'), Date.UTC(2020, 0, 15));
+assert.strictEqual(cj.parseTimeValue('15-01-2020'), Date.UTC(2020, 0, 15));
+assert.strictEqual(cj.parseTimeValue(1577836800000), 1577836800000);
+assert.ok(typeof cj.parseTimeValue('2020-01-15T10:30:00Z') === 'number');
+assert.strictEqual(cj.parseTimeValue('not a date'), null);
+assert.strictEqual(cj.parseTimeValue(''), null);
+assert.strictEqual(cj.parseTimeValue('2020-13-99'), null);   // invalid month/day
+assert.strictEqual(cj.parseTimeValue('9'.repeat(40)), null); // over length cap
+
+// buildTimeSeriesData: aggregates same X, drops invalid, sorts chronologically
+var raw = [
+  { d: '2020-03-01', v: 5 },
+  { d: '2020-01-01', v: 10 },
+  { d: '2020-01-01', v: 2 },
+  { d: 'bad', v: 99 },
+];
+var series = [{ yField: 'v', label: 'V', aggregation: 'sum', color: '#000000' }];
+var out = cj.buildTimeSeriesData(raw, 'd', series);
+assert.strictEqual(out.labels, undefined);            // no labels for time scale
+assert.strictEqual(out.datasets.length, 1);
+var pts = out.datasets[0].data;
+assert.strictEqual(pts.length, 2);                    // 'bad' dropped, two unique dates
+assert.ok(pts[0].x < pts[1].x);                       // chronological
+assert.strictEqual(pts[0].x, Date.UTC(2020, 0, 1));
+assert.strictEqual(pts[0].y, 12);                     // 10 + 2 aggregated
+assert.strictEqual(pts[1].y, 5);
+
+// --- B3 a11y date formatting ---
+var tsData = { datasets: [{ label: 'V', data: [{ x: Date.UTC(2020, 0, 15), y: 7 }] }] };
+var mt = cj.buildAccessibleTableModel(tsData, { chartType: 'line' }, idt, true);
+assert.deepStrictEqual(mt.headers, ['Series', 'X', 'Y']);
+assert.strictEqual(mt.rows[0][1], '2020-01-15');   // timestamp formatted as date
+assert.strictEqual(mt.rows[0][2], '7');
+// without isTime, x stays raw
+var mr = cj.buildAccessibleTableModel(tsData, { chartType: 'scatter' }, idt, false);
+assert.strictEqual(mr.rows[0][1], String(Date.UTC(2020, 0, 15)));
+
 console.log('JS unit tests passed');

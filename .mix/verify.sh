@@ -76,7 +76,8 @@ front = {"version":1,"chartType":"bar","title":"Ventas & Marketing (>65)","xAxis
 out = json.loads(V(json.dumps(front)))
 ck("title keeps & >", out["title"]=="Ventas & Marketing (>65)")
 ck("option keys", set(out["options"].keys())=={"showLegend","showGrid","stacked","beginAtZero",
-   "showOthers","horizontalBars","categorySort","topN","othersLabel","xAxisTitle","yAxisTitle","numberFormat"})
+   "showOthers","horizontalBars","categorySort","topN","othersLabel","xAxisTitle","yAxisTitle",
+   "timeAxis","timeUnit","numberFormat"})
 ck("numberFormat intact", out["options"]["numberFormat"]["prefix"]=="$")
 o6 = json.loads(V(json.dumps({"chartType":"bar","series":[{"yField":"a","aggregation":"median"}],
      "options":{"topN":99999,"stacked":"false","showLegend":"true"}})))

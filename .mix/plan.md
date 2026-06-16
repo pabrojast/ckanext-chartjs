@@ -59,7 +59,7 @@ Gaps detectados (código + asesores Codex/DeepSeek):
 ### 🟡 Tier B — Mejoras medianas
 - **B1. Aplicar los filtros de CKAN** — ✅ HECHO (igualdad, post-carga, whitelist). Rangos numéricos/fecha y filtrado nativo de datastore = pendiente (futuro).
 - **B2. Robustez CSV** — ✅ HECHO en `datautils.py` (sniff delimitador, encoding utf-8-sig/utf-8/latin-1, coerción por columna preservando IDs con ceros).
-- **B3. Eje temporal** — detectar fechas, escala temporal de Chart.js, orden cronológico real y granularidad (auto/día/mes/año). *Impacto: alto · Esfuerzo: M-L.*
+- **B3. Eje temporal** — ✅ HECHO. `parseTimeValue` (UTC, ReDoS-safe) + `buildTimeSeriesData` (pipeline separado) + `isTimeAxis` (auto por `semanticType temporal` + fallback + guard de adapter); `scales.x.type='time'`; controles Display (Time axis/unit); validador whitelist; i18n; fechas formateadas en tabla a11y; date-adapter por CDN (self-host documentado). **Tier B COMPLETO.**
 - **B4. i18n ES/EN** — ✅ HECHO. `plugin.py` `CJ_STRINGS` (es) + `_get_cj_i18n()` por locale; template inyecta `window.CJ_I18N` vía `tojson`; JS rutea ~61 strings por `t(key, fallback)`. ES funciona sin compilar `.mo` (migración a gettext/.po = follow-up).
 - **B5. Accesibilidad (WCAG)** — ✅ HECHO. Tabla-fallback (función pura + DOM con `textContent`, sin XSS), `role=img`+`aria-label` en canvas, `aria-live`, paleta **Okabe-Ito** default, `:focus-visible`, `.cj-sr-only`. Tests node (incl. payloads XSS literales).
 - **B6. Tests (pytest)** — ✅ HECHO (parcial). `tests/test_datautils.py` (20 tests: CSV+filtros) + `tests/chartjs-ckan.test.js` (node, helpers JS). Route tests de Flask NO posibles headless (ckan/flask no importables) → se extrajeron funciones puras. Pendiente: más cobertura si se agregan B3/B4/B5.
