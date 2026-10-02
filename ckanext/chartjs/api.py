@@ -93,16 +93,69 @@ def _infer_analytic_type_from_datastore(ds_type):
     return 'dimension'
 
 
-def _http_fetch(url, headers=None, timeout=60):
-    """Fetch a URL with optional headers, returning decoded text or None."""
-    import urllib.request
+def _get_max_bytes():
+    """Largest file the data endpoint will download (default 50 MiB)."""
     try:
+        return int(toolkit.config.get('ckanext.chartjs.max_bytes', str(50 * 1024 * 1024)))
+    except (TypeError, ValueError):
+        return 50 * 1024 * 1024
+
+
+def _public_url(url):
+    """Only http(s) on standard ports to hosts that resolve to public addresses."""
+    import ipaddress
+    import socket
+    from urllib.parse import urlsplit
+    parsed = urlsplit(url)
+    if parsed.scheme not in ('http', 'https') or not parsed.hostname or parsed.username or parsed.password:
+        return False
+    port = parsed.port or (443 if parsed.scheme == 'https' else 80)
+    if port not in (80, 443):
+        return False
+    try:
+        infos = socket.getaddrinfo(parsed.hostname, port, type=socket.SOCK_STREAM)
+        ips = {row[4][0] for row in infos}
+    except (OSError, UnicodeError):
+        return False
+    return bool(ips) and all(ipaddress.ip_address(ip).is_global for ip in ips)
+
+
+def _http_fetch(url, headers=None, timeout=60, trusted=False):
+    """Fetch a URL, returning decoded text or None.
+
+    Untrusted URLs (external resources, signed storage URLs) and their
+    redirects must resolve to public addresses; the site's own download
+    endpoint is fetched with trusted=True. Bodies stop at
+    ckanext.chartjs.max_bytes."""
+    import urllib.request
+    import urllib.error
+    max_bytes = _get_max_bytes()
+
+    class _Redirects(urllib.request.HTTPRedirectHandler):
+        def redirect_request(self, req, fp, code, msg, hdrs, newurl):
+            if not trusted and not _public_url(newurl):
+                raise urllib.error.HTTPError(newurl, 403, 'redirect to a non-public address', hdrs, fp)
+            return super().redirect_request(req, fp, code, msg, hdrs, newurl)
+
+    try:
+        if not trusted and not _public_url(url):
+            return None
         req = urllib.request.Request(url)
         for k, v in (headers or {}).items():
             if v:
                 req.add_header(k, v)
-        with urllib.request.urlopen(req, timeout=timeout) as resp:
-            return resp.read().decode('utf-8', errors='replace')
+        opener = urllib.request.build_opener(_Redirects())
+        with opener.open(req, timeout=timeout) as resp:
+            chunks, total = [], 0
+            while True:
+                chunk = resp.read(1024 * 1024)
+                if not chunk:
+                    break
+                total += len(chunk)
+                if total > max_bytes:
+                    break
+                chunks.append(chunk)
+            return b''.join(chunks).decode('utf-8', errors='replace')
     except Exception as e:
         if os.getenv("CJ_DEBUG", "false").lower() == "true":
             print(f"[chartjs] HTTP fetch failed for {url}: {e}")
@@ -170,7 +223,7 @@ def _try_direct_csv(resource_id, max_rows):
                 'Cookie': request.headers.get('Cookie', ''),
                 'Authorization': request.headers.get('Authorization', ''),
             }
-            content = _http_fetch(download_url, headers=headers, timeout=60)
+            content = _http_fetch(download_url, headers=headers, timeout=60, trusted=True)
 
         # 4. External URL (link-type resources).
         if content is None and resource_url.startswith(('http://', 'https://')):

@@ -80,7 +80,7 @@
   </div>
 </div>
 
-<script src="https://cdn.jsdelivr.net/npm/chart.js@4/dist/chart.umd.min.js"></script>
+<script src="/chartjs-app/chart.umd.min.js"></script>
 <script src="/chartjs-app/chartjs-ckan.js"></script>
 <script>
 (function() {
@@ -158,9 +158,11 @@
 
     var configJson = JSON.stringify(config);
 
+    var csrfMeta = document.querySelector('meta[name="_csrf_token"], meta[name="csrf_token"]');
     fetch('/api/chartjs/view/' + CJ_CONFIG.viewId + '/save-config', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 'Content-Type': 'application/json', 'X-CSRFToken': csrfMeta ? csrfMeta.getAttribute('content') : '' },
+      credentials: 'same-origin',
       body: JSON.stringify({ config: configJson }),
     })
     .then(function(resp) { return resp.json(); })
